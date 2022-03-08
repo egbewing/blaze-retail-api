@@ -106,11 +106,7 @@ class blaze_retail_api():
         params = {'limit': 200, 'start': skip}
         response = requests.get(url, headers=headers, params=params)
         if response.status_code == 200:
-            dat = pd.DataFrame().from_records(response.json().get('values')).rename(
-                columns={
-                    'name': 'brand_name', 'id': 'brand_id'
-                    }
-                ).drop_duplicates('brand_id')
+            dat = pd.DataFrame().from_records(pd.json_normalize(response.json().get('values')))
             if skip >= response.json().get('total'):
                 return dat
             else:
@@ -144,7 +140,7 @@ class blaze_retail_api():
         response = requests.get(url, headers=headers, params=params)
 
         if response.status_code == 200:
-            dat = pd.DataFrame().from_records(response.json().get('values'))
+            dat = pd.DataFrame().from_records(pd.json_normalize(response.json().get('values')))
             if skip >= response.json().get('total'):
                 return dat
             else:
@@ -177,33 +173,48 @@ class blaze_retail_api():
             }
         response = requests.get(url, headers=headers)
         if response.status_code == 200:
-            dat = pd.DataFrame().from_records(response.json().get('values'))
+            dat = pd.DataFrame().from_records(pd.json_normalize(response.json().get('values')))
             return dat
         else:
             return f'Error retrieving inventory locations with status code {response.status_code}'
 
     def get_members(
             self,
-            start_date: datetime.timestamp=(datetime.today() - timedelta(days=1)).timestamp() * 1000,
-            end_date: datetime.timestamp=datetime.today().timestamp() * 1000,
+            start_date: str=(datetime.today() - timedelta(days=1)).strftime('%m/%d/%Y'),
+            end_date: str=datetime.today().strftime('%m/%d/%Y'),
             skip: int=0,
             limit: int=100
             ) -> pd.DataFrame:
+        """Get DF of members under current context according to dates given. Dates given reflect member
+        join date. If member joined between given dates, then member will be retrieved.
+
+        Args:
+            start_date (str, optional): start date of window. Defaults to (datetime.today() - timedelta(days=1)).strftime('%m/%d/%Y').
+            end_date (str, optional): ending date of window. Defaults to datetime.today().strftime('%m/%d/%Y').
+            skip (int, optional): records to skip. Defaults to 0.
+            limit (int, optional): query limit. Defaults to 100.
+
+        Returns:
+            pd.DataFrame: DF of members and their attributes.
+        """
+        epoch_offset = 1000  # offset for datetime for BLAZE TS format
+        _start_date = int(datetime.strptime(start_date, '%m/%d/%Y').timestamp() * epoch_offset)
+        _end_date = int(datetime.strptime(end_date, '%m/%d/%Y').timestamp() * epoch_offset)
         url = 'https://api.partners.blaze.me/api/v1/partner/members'
         headers = {
             'partner_key': self.partner_key,
             'Authorization': self.Authorization
             }
         params = {
-            'startDate': start_date,
-            'endDate': end_date,
+            'startDate': _start_date,
+            'endDate': _end_date,
             'skip': skip,
             'limit': limit
             }
         response = requests.get(url, headers=headers, params=params)
         if response.status_code == 200:
+            dat = pd.DataFrame().from_records(pd.json_normalize(response.json().get('values')))
             if skip >= response.json().get('total'):
-                dat = pd.DataFrame().from_records(response.json().get('values'))
                 return dat
             else:
                 return(
@@ -213,10 +224,33 @@ class blaze_retail_api():
                             start_date=start_date,
                             end_date=end_date,
                             skip=skip + response.json().get('limit')
-                        )
-                    ])
-                )
-        
+                            )
+                        ])
+                    )
+    def get_employees(self, skip: int=0, limit: int=200):
+
+        url = 'https://api.partners.blaze.me/api/v1/partner/employees'
+        headers = {
+            'partner_key': self.partner_key,
+            'Authorization': self.Authorization
+            }
+        params = {'start': skip, 'limit': limit}
+        response = requests.get(url, headers=headers, params=params)
+        if response.status_code == 200:
+            dat = pd.DataFrame().from_records(pd.json_normalize(response.json().get('values')))
+            if skip >= response.json().get('total'):
+                dat = pd.DataFrame().from_records(response.json().get('values'))
+                return dat
+            else:
+                return(
+                    pd.concat([
+                        dat,
+                        self.get_employees(
+                            skip=skip+ response.json().get('limit'),
+                            limit=limit
+                            )
+                        ])
+                    )
 #####################################################################################################
 #TODO FIX HOW SALES ARE FORMATTED FOR EASIER USE IN DF OR OTHERWISE
 #####################################################################################################
@@ -277,4 +311,4 @@ class blaze_retail_api():
 
 if __name__ == '__main__':
     b = blaze_retail_api()
-    i = b.get_curr_inventory()
+    e = b.get_employees()
