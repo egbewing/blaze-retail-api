@@ -89,6 +89,27 @@ class blaze_retail_api():
             return f'Error retrieving products: with status code {response.status_code}'
 
 
+    def get_categories(self) -> None:
+        """Get all categories under current context.
+
+        Returns:
+            None
+        """
+
+        url = 'https://api.partners.blaze.me/api/v1/partner/store/inventory/categories'
+        headers = {
+            'partner_key': self.partner_key,
+            'Authorization': self.Authorization
+            }
+        response = requests.get(url, headers=headers)
+
+        if response.status_code == 200:
+            return pd.json_normalize(response.json().get('values'))
+        else:
+            return f'Error retrieving categories: with status code {response.status_code}'
+        
+
+
     def get_brands(self, skip: int=0) -> pd.DataFrame:
         """
         Get all brands from BLAZE API recursively
@@ -178,6 +199,7 @@ class blaze_retail_api():
         else:
             return f'Error retrieving inventory locations with status code {response.status_code}'
 
+
     def get_members(
             self,
             start_date: str=(datetime.today() - timedelta(days=1)).strftime('%m/%d/%Y'),
@@ -227,7 +249,18 @@ class blaze_retail_api():
                             )
                         ])
                     )
-    def get_employees(self, skip: int=0, limit: int=200):
+
+
+    def get_employees(self, skip: int=0, limit: int=200) -> pd.DataFrame:
+        """Get all employee records under the current context.
+
+        Args:
+            skip (int, optional): nbr of records to skip at API call. Defaults to 0.
+            limit (int, optional): record limit. Defaults to 200.
+
+        Returns:
+            pd.DataFrame: dataframe of all employees and details.
+        """
 
         url = 'https://api.partners.blaze.me/api/v1/partner/employees'
         headers = {
@@ -252,18 +285,22 @@ class blaze_retail_api():
                         ])
                     )
 
+
     def get_item_sales(
             self,
             start_date: str=(datetime.today() - timedelta(days=1)).strftime('%m/%d/%Y'),
             end_date: str=datetime.today().strftime('%m/%d/%Y'),
             skip: int=0
-            ):
+            ) -> pd.DataFrame:
         """Get line item sales for specified dates.
 
         Args:
             start_date (str, optional): date window start Defaults to (datetime.today() - timedelta(days=1)).strftime('%m/%d/%Y').
             end_date (str, optional): _description_. Defaults to datetime.today().strftime('%m/%d/%Y').
-            skip (int, optional): _description_. Defaults to 0.
+            skip (int, optional): nbr records to skip in API call. Defaults to 0.
+
+        Returns:
+            pd.DataFrame: dataframe of line item sales and details.
         """
         url = "https://api.partners.blaze.me/api/v1/partner/transactions"
         headers = {
@@ -292,9 +329,45 @@ class blaze_retail_api():
                         )
                     ])
 
+
+    def get_transactions(
+            self,
+            start_date: str=(datetime.today() - timedelta(days=1)).strftime('%m/%d/%Y'),
+            end_date: str=datetime.today().strftime('%m/%d/%Y'),
+            skip: int=0
+            ) -> pd.DataFrame:
+        """Get transactions for given timeframe.
+
+        Args:
+            start_date (str, optional): start date of time window. Defaults to (datetime.today() - timedelta(days=1)).strftime('%m/%d/%Y').
+            end_date (str, optional): end date of time window. Defaults to datetime.today().strftime('%m/%d/%Y').
+            skip (int, optional): nbr records to skip in API call. Defaults to 0.
+
+        Returns:
+           pd.DataFrame: dataframe of transactions and details (header level).
+        """
+        url = "https://api.partners.blaze.me/api/v1/partner/transactions"
+        headers = {
+                'partner_key': os.getenv('blz_partner_key'),
+                'Authorization': os.getenv('blz_api_key')
+                }
+        params = {'startDate': start_date, 'endDate': end_date, 'skip': skip}
+        response = requests.get(url, headers=headers, params=params)
+        if response.status_code == 200:
+            dat = pd.json_normalize(response.json().get('values'))
+            if skip + response.json().get("limit") >= response.json().get('total'):
+                return dat
+            else:
+                return pd.concat([
+                    dat,
+                    self.get_item_sales(
+                        start_date=start_date,
+                        end_date=end_date,
+                        skip=skip + response.json().get('limit')
+                        )
+                    ])
 #########################################################################################################################
 
 if __name__ == '__main__':
     b = blaze_retail_api()
-    s = b.get_item_sales()
-    e = b.get_employees()
+    t = b.get_transactions()
