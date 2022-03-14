@@ -251,64 +251,50 @@ class blaze_retail_api():
                             )
                         ])
                     )
-#####################################################################################################
-#TODO FIX HOW SALES ARE FORMATTED FOR EASIER USE IN DF OR OTHERWISE
-#####################################################################################################
-    def get_item_sales(self,
-            start: str=(datetime.today() - timedelta(days=1)).strftime('%m/%d/%Y'),
-            end: str=datetime.today().strftime('%m/%d/%Y'),
-            skip=0
-            ):
-        """Currently unused, needs revision. See comments in main()
-        Args:
-            start (str, optional): [description]. Defaults to (datetime.today() - timedelta(days=1)).strftime('%m/%d/%Y').
-            end (str, optional): [description]. Defaults to datetime.today().strftime('%m/%d/%Y').
-            skip (int, optional): [description]. Defaults to 0.
-        Returns:
-            [type]: [description]
-        """
 
+    def get_item_sales(
+            self,
+            start_date: str=(datetime.today() - timedelta(days=1)).strftime('%m/%d/%Y'),
+            end_date: str=datetime.today().strftime('%m/%d/%Y'),
+            skip: int=0
+            ):
+        """Get line item sales for specified dates.
+
+        Args:
+            start_date (str, optional): date window start Defaults to (datetime.today() - timedelta(days=1)).strftime('%m/%d/%Y').
+            end_date (str, optional): _description_. Defaults to datetime.today().strftime('%m/%d/%Y').
+            skip (int, optional): _description_. Defaults to 0.
+        """
         url = "https://api.partners.blaze.me/api/v1/partner/transactions"
         headers = {
                 'partner_key': os.getenv('blz_partner_key'),
                 'Authorization': os.getenv('blz_api_key')
                 }
-        params = {'startDate': start, 'endDate': end, 'skip': skip}
+        params = {'startDate': start_date, 'endDate': end_date, 'skip': skip}
         response = requests.get(url, headers=headers, params=params)
-        if response.ok:
-            dat = pd.DataFrame().from_dict(response.json().get('values'))
-            itms = dat.cart.apply(lambda x: x.get('items'))
-            itms = itms.apply(lambda x: pd.DataFrame().from_records(x))
-            itms = combine_txns(itms)
-            dat['joinid'] = dat.id.apply(lambda x: x[0:-3])
-            dat = dat.rename(columns={'id': 'txn_id'})
-            dat['created_dt'] = dat.created.apply(lambda x: datetime.fromtimestamp(x/1000))
-            dat['completedTime'] = dat['completedTime'].apply(lambda x: datetime.fromtimestamp(x/1000))
-            itms['joinid'] = itms.id.apply(lambda x: x[0:-3])
-            ln_itm_txns = dat.merge(
-                itms,
-                how='left',
-                on='joinid'
+        if response.status_code == 200:
+            dat = pd.DataFrame(
+                list(
+                    pd.json_normalize(
+                        response.json().get('values'))\
+                        ['cart.items'].explode().reset_index(drop=True)
+                    )
                 )
-            ln_itm_txns = ln_itm_txns[[
-                'created_dt',
-                'completedTime',
-                'transNo',
-                'productId',
-                'quantity'
-                ]]
             if skip + response.json().get("limit") >= response.json().get('total'):
-                return ln_itm_txns
+                return dat
             else:
                 return pd.concat([
-                    ln_itm_txns,
-                    get_sls(start=start, end=end, skip=skip + response.json().get('limit'))
+                    dat,
+                    self.get_item_sales(
+                        start_date=start_date,
+                        end_date=end_date,
+                        skip=skip + response.json().get('limit')
+                        )
                     ])
-        else:
-            return f'Error retrieving sls data from BLAZE -- response code: {response.status_code}:{response.reason}'
 
 #########################################################################################################################
 
 if __name__ == '__main__':
     b = blaze_retail_api()
+    s = b.get_item_sales()
     e = b.get_employees()
